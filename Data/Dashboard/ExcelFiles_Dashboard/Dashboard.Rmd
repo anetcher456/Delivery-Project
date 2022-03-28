@@ -1,0 +1,322 @@
+---
+title: "Monthly Progress Report"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    navbar:
+      - { icon: "fa-link", href: "https://sirskidelivery.netlify.app/", align: right }
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(DBI)
+library(knitr)
+library(readxl)
+library(DT)
+#load needed libraries
+
+customer <- read_excel("CUSTOMER.xlsx")
+cust_order <- read_excel("CUST_ORDER.xlsx")
+date_info <- read_excel("DATE_INFO.xlsx")
+employee <- read_excel("EMPLOYEE.xlsx")
+order <- read_excel("ORDER.xlsx")
+product <- read_excel("PRODUCT.xlsx")
+#load datasets from the database
+
+```
+
+Revenue 
+================================================================================================
+Row {data-width=150}
+------------------------------------------------------------------------------------------------
+
+### Total Orders Price
+
+```{r}
+product$ItemPrice <- as.numeric(as.character(product$ItemPrice))
+#changes datatype of Item Price to double
+
+order_item <- full_join(order, product, by = "ItemID") %>% select(OrderID,ItemID,ItemQuantity,ItemPrice) %>% na.omit() 
+#shows OrderID,ItemID,ItemQuantity,ItemPrice for each item in order 
+
+order_item_subPrice <- order_item %>% mutate(order_item, subPrice=ItemPrice*ItemQuantity) 
+#shows itemId, price and subPrice for each item in order
+
+order_subPrice <- order_item_subPrice %>% group_by(OrderID) %>% summarise(OrderSubPrice=sum(subPrice)) 
+#precise SubPrice (with no delivery fee) for each order
+
+order_under30 <- filter(order_subPrice, OrderSubPrice<=30) %>% mutate(OrderPriceExtended=OrderSubPrice+3)
+#shows all orders under 30e, it's sub and extended price
+
+order_over30 <- filter(order_subPrice, OrderSubPrice>30) %>% mutate(OrderPriceExtended=OrderSubPrice*1.2)
+#shows all orders over 30e, it's sub and extended price (20% delivery fee)
+
+order_extended_price <- rbind(order_under30, order_over30) %>% arrange(OrderID)
+#shows OrderID its SubPrice and ExtendedPrice
+
+total_orders_price <- order_extended_price %>% summarise(TotalOrdersPrice=sum(OrderPriceExtended))
+#shows total extended price of all orders made
+
+valueBox(total_orders_price, icon ="fa-shopping-cart",
+         color="purple")
+#show the total price of all orders in the value box
+```
+
+### Drives' Salaries
+
+```{r}
+NrOfWorkingDelivery <- nrow(filter(employee, JobType=="Delivery"))
+#find all Delivery employees and count them
+
+TotalOrders <-nrow(order %>% distinct(OrderID))
+#count total number of orders
+
+NrOfHoursWorked <- TotalOrders/4.30
+#calculate the Working hours by division Total orders by our own counter
+
+DriverSalary <- NrOfHoursWorked*20
+#Driver salary is 20€ per hour so we count it
+
+DriverSalary <- round(DriverSalary, digits = 2)
+#Round the drivers salaries to 2 decimals
+
+valueBox(DriverSalary, icon = "fa-car",
+         color="navy")
+#Display the Driver Salary in the value box
+```
+
+
+### Total Income
+
+```{r}
+TotalIncome <- (total_orders_price-DriverSalary)
+#Total income is Total Price of orders minus the drivers salaries, we count it
+
+TotalIncome <- round(TotalIncome, digits = 2)
+#Round the Total income to 2 decimals
+
+TotalIncome <- as.numeric(TotalIncome)
+#Little trick so this value would not become a dataset
+
+valueBox(TotalIncome, icon = "fa-wallet",
+         color="orange")
+#Display Total Income in a Value Box
+```
+
+Row {data-width=500}
+------------------------------------------------------------------------------------------------
+
+### Total Orders Price Per Day
+
+
+```{r}
+order_price_date <- full_join(date_info, order_extended_price, by = "OrderID")
+#merge date info with order_extended price 
+
+TotalDayPrice <- order_price_date %>% distinct(OrderDate, OrderPriceExtended) %>% group_by(OrderDate) %>% summarise(DayPrice=sum(OrderPriceExtended)) 
+
+p <- ggplot(TotalDayPrice, aes(OrderDate, DayPrice)) + geom_col() +labs(x="Day Of Order", y= "Total Price Of Orders", title="Total Price Of Orders made per Day") 
+ggplotly(p)
+# this is a plotly pacakge avaliablity to click on a point and it will display variables for it on it
+```
+
+
+### Orders Prices
+
+
+```{r}
+datatable(order_extended_price)
+#show the Extended price of each order, using datable package it looks nicer
+```
+
+
+Orders and Users
+================================================================================================
+Row {data-width=150}
+------------------------------------------------------------------------------------------------
+
+### Total Orders
+
+```{r}
+
+valueBox(nrow(order %>% distinct(OrderID)), icon ="fa-tags",
+         color="orange")
+#Count the number of orders and display it in the valuebox
+```
+
+### Total Registered Users
+
+```{r}
+
+valueBox(nrow(customer), icon = "fa-users",
+         color="pink")
+#Count the number of registered customers and display it in the valuebox
+```
+
+
+### Total Products Available
+
+```{r}
+valueBox(nrow(product), icon = "fa-sign-in-alt",
+         color="green")
+#Count the number of avilable products and display it in the valuebox
+```
+
+
+Row {data-width=500}
+------------------------------------------------------------------------------------------------
+
+### Orders per Day
+
+```{r}
+a <- ggplot(date_info, aes(x=OrderDate)) + geom_bar() + labs(x="Date of Orders", y="Number of Orders", title="Orders per Day")
+#show how many orders were made each day
+
+ggplotly(a) 
+#this is a plotly pacakge avaliablity to click on a point and it will display variables for it on it
+
+```
+
+
+### Average Time of Orders per Day
+
+
+```{r}
+b <- ggplot(date_info, aes(x=OrderTime)) + geom_histogram(bins = 100) + labs(x="Time of Order", y="Number of Orders", title="Time of Orders")
+#Show how many orders were made on each hour of the day (average)
+
+ggplotly(b)
+#this is a plotly pacakge avaliablity to click on a point and it will display variables for it on it
+```
+
+
+KPI
+================================================================================================
+Row {data-width=650}
+------------------------------------------------------------------------------------------------
+
+### Registered Users
+
+```{r}
+gauge(nrow(customer), min=0, max=100,
+      gaugeSectors(
+        success = c(80,100), warning = c(50,79), danger= c(0,49)
+      ))
+#show how many ragistered users there are and indicate with the colour if the value meets KPI
+```
+
+
+### Orders Made
+
+```{r}
+gauge(nrow(order %>% distinct(OrderID)), min=0, max=400,
+      gaugeSectors(
+        success = c(200,400), warning = c(100,199), danger= c(0,99)
+      ))
+#show how many orders were made and indicate it with the colour if the value meets KPI
+```
+
+Row {.tabset data-lenght=300}
+------------------------------------------------------------------------------------------------
+
+### Registered Users / Orders Made
+
+```{r}
+#Below is the section for comments regarding the KPI's
+```
+Our first Key Performance Indicator is Registered users. It means that 80 people out of 100 have registered on our website to make orders online. This number of users shows that in a month we managed to attract 80 people.
+
+
+Second KPI is Orders made. In one month, our company receive 300 orders out of 300 orders, so it means that the company is moving forward.
+
+
+### Income / User Ratings
+
+```{r}
+#Below is the section for comments regarding the KPI's
+```
+Third KPI is Income. After one month of working our company got 2200€. It means that company has good sales and service.
+
+
+And last fourth KPI is User Ratings. Company received 4.3 out of 5 points. By that we can tell that our customers are satisfied with our shop, but also the company has room to grow to totally satisfy customers.
+
+Row {data-width=650}
+-----------------------------------------------------------------------------------------------
+### Income
+
+```{r}
+
+gauge(TotalIncome, min=0, max=2500, symbol="€",
+      gaugeSectors(success = c(2000,2500), warning = c(1250,1999), danger= c(0,1249)))
+#show income that were made and indicate with the colour if the value meets KPI
+```
+
+
+### User Ratings
+
+```{r}
+gauge(4.3, min=0, max=5,
+      gaugeSectors(
+        success = c(4,5), warning = c(2.5,3.9), danger= c(0,2.4)
+      ))
+#show user rating and indicate with the colour if the value meets KPI
+#This only value is hardcoded as we did not yet implementd it to our database
+```
+
+
+
+
+
+Products
+================================================================================================
+Row {data-width=650}
+------------------------------------------------------------------------------------------------
+
+### 5 Most Popular Products
+
+```{r}
+items_bought <- order_item %>% group_by(ItemID) %>% summarise(ItemsBought=sum(ItemQuantity)) 
+top5_products <- full_join(items_bought, product, by = "ItemID") %>% select(ItemName, ItemsBought) %>% arrange(desc(ItemsBought)) %>% head(5)
+#find top 5 selling products and display their names with nr of purchases
+
+x <- ggplot(top5_products, aes(ItemName, ItemsBought)) + geom_col() + labs(x="Product", y="Number of Purchases", title = "Top 5 Selling Products")
+#display the result on the graph
+
+ggplotly(x)
+#this is a plotly pacakge avaliablity to click on a point and it will display variables for it on it
+```
+
+
+### 5 Least Popular Products
+
+```{r}
+least5_products <- full_join(items_bought, product, by = "ItemID") %>% select(ItemName, ItemsBought) %>% arrange(ItemsBought) %>% head(5)
+#find tleast 5 selling products and display their names with nr of purchases, omit the products with no sales at all
+
+g <- ggplot(least5_products, aes(ItemName, ItemsBought)) + geom_col() + labs(x="Product", y="Number of Purchases", title = "Least 5 Selling Products")
+#display the result on the graph
+
+ggplotly(g)
+#this is a plotly pacakge avaliablity to click on a point and it will display variables for it on it
+```
+
+Row {data-width=650}
+------------------------------------------------------------------------------------------------
+
+### Most Popular Products
+
+```{r}
+datatable(full_join(items_bought, product, by = "ItemID") %>% select(ItemName, ItemsBought) %>% arrange(desc(ItemsBought)))
+```
+
+
+### Least Popular Products
+
+```{r}
+datatable(full_join(items_bought, product, by = "ItemID") %>% select(ItemName, ItemsBought) %>% arrange(ItemsBought))
+```
