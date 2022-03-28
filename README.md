@@ -1,0 +1,2 @@
+# Delivery-Project
+This project is responsible for maintaining a website with a connection to the Albert Heijn grocery shop, as well as the ability to order products from the store for delivery. There is a prototype for it, as well as an analysis of the made-up data with an estimate of 3 months of website work. The project is based on a fictitious example and is not intended to be used on a regular basis.
